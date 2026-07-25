@@ -1,0 +1,653 @@
+---
+title: "Introduction to the LGG Distribution"
+author: "Rodolpho Jordan"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to the LGG Distribution}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+# Introduction
+
+The **gamlss.LGG** package implements the LGG distribution for the GAMLSS framework. It provides functions for evaluating the probability density function, cumulative distribution function, quantile function, random number generation, and the corresponding GAMLSS family object.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  fig.width = 6,
+  fig.height = 4
+)
+
+library(gamlss)
+library(gamlss.LGG)
+```
+
+## Probability density function
+
+The following figure illustrates the LGG probability density function for different values of the parameter `nu`.
+
+```{r density-plot}
+curve(
+  dLGG(x, mu = 0, sigma = 1, nu = 0.5),
+  from = -5, to = 5,
+  ylim = c(0, 0.45),
+  ylab = "Density",
+  xlab = "y",
+  lwd = 2
+)
+
+curve(
+  dLGG(x, mu = 0, sigma = 1, nu = 1),
+  add = TRUE,
+  col = 2,
+  lwd = 2
+)
+
+curve(
+  dLGG(x, mu = 0, sigma = 1, nu = 2),
+  add = TRUE,
+  col = 4,
+  lwd = 2
+)
+
+legend(
+  "topright",
+  legend = c(expression(nu==0.5),
+             expression(nu==1),
+             expression(nu==2)),
+  col = c(1,2,4),
+  lwd = 2,
+  bty = "n"
+)
+```
+
+
+## Fitting a GAMLSS model
+
+The following example simulates observations from the LGG distribution and fits a GAMLSS regression model in which the location parameter is modeled as a function of a single explanatory variable.
+
+```{r gamlss-fit}
+set.seed(123)
+
+n <- 300
+x <- runif(n)
+
+mu <- 1 + 2 * x
+
+y <- rLGG(
+  n,
+  mu = mu,
+  sigma = 0.5,
+  nu = 0.4
+)
+
+dados <- data.frame(y, x)
+
+fit <- gamlss(
+  y ~ x,
+  sigma.formula = ~1,
+  family = LGG(),
+  data = dados,
+  trace = FALSE
+)
+
+coef(fit)
+```
+
+## Model diagnostics
+
+The fitted model can be evaluated using the standard diagnostic tools available in the **gamlss** package. The following diagnostic plots summarize the residual behavior and assess the adequacy of the fitted model.
+
+```{r diagnostic-plots, fig.width=7, fig.height=7}
+plot(fit)
+```
+
+The worm plot provides a more detailed assessment of the normalized quantile residuals.
+
+```{r worm-plot, fig.width=6, fig.height=5}
+wp(fit)
+```
+
+## Analysis of Right-Censored Data
+
+The LGG distribution can also be used to model right-censored survival data by combining the package with **gamlss.cens**. In the following example, a synthetic data set is generated from a log-LGG distribution, a right-censored model is fitted, and the estimated survival curve is compared with the nonparametric Kaplan–Meier estimator.
+
+Since survival times are usually positive, the LGG distribution is applied on the logarithmic scale. The corresponding censored family is generated using the functions available in the **gamlss.cens** package.
+
+```{r censored-data, fig.width=7, fig.height=5, message=FALSE}
+library(survival)
+library(gamlss.cens)
+
+set.seed(123)
+
+## Simulate log-survival times
+
+n <- 300
+
+true_mu <- 2
+true_sigma <- 0.7
+true_nu <- 0.5
+
+y <- rLGG(
+  n,
+  mu = true_mu,
+  sigma = true_sigma,
+  nu = true_nu
+)
+
+true_time <- exp(y)
+
+## Independent censoring
+
+censor_time <- runif(n, 0, 6)
+
+status <- as.numeric(true_time <= censor_time)
+
+time <- pmin(true_time, censor_time)
+
+dados <- data.frame(time, status)
+
+## Proportion of censored observations
+
+cat(
+  "Censoring proportion:",
+  round(mean(status == 0), 3),
+  "\n"
+)
+
+## Create the log-LGG censored family
+
+gen.Family("LGG", type = "log")
+gen.cens(logLGG, type = "right")
+
+## Fit the model
+
+fit <- gamlss(
+  Surv(time, status) ~ 1,
+  family = logLGGrc(),
+  data = dados,
+  trace = FALSE
+)
+
+## Estimated parameters
+
+mu_hat <- fitted(fit, "mu")[1]
+sigma_hat <- fitted(fit, "sigma")[1]
+nu_hat <- fitted(fit, "nu")[1]
+
+parameters <- data.frame(
+  Parameter = c("mu", "sigma", "nu"),
+  True = c(true_mu, true_sigma, true_nu),
+  Estimate = c(mu_hat, sigma_hat, nu_hat)
+)
+
+parameters
+```
+
+The estimated parameters are close to the values used to generate the data, illustrating the ability of the censored log-LGG model to recover the underlying distributional parameters.
+
+```{r survival-curve, fig.width=7, fig.height=5}
+
+## Kaplan-Meier estimate
+
+km <- survfit(Surv(time, status) ~ 1)
+
+times <- km$time
+
+## Parametric survival function
+
+S_logLGG <- plogLGG(
+  times,
+  mu = mu_hat,
+  sigma = sigma_hat,
+  nu = nu_hat,
+  lower.tail = FALSE
+)
+
+## Plot
+
+plot(
+  km,
+  lwd = 2,
+  xlab = "Time",
+  ylab = "Survival probability",
+  main = "Comparison of Kaplan–Meier and log-LGG Survival Curves"
+)
+
+lines(
+  times,
+  S_logLGG,
+  col = "red",
+  lwd = 2
+)
+
+legend(
+  "topright",
+  legend = c("Kaplan–Meier", "log-LGG"),
+  col = c("black", "red"),
+  lwd = 2,
+  bty = "n"
+)
+```
+
+The fitted log-LGG survival curve follows the Kaplan–Meier estimator, showing the flexibility of the proposed distribution for modeling right-censored survival data. This example demonstrates how the **gamlss.LGG** package can be combined with **gamlss.cens** to perform parametric survival analysis.
+
+## Nonlinear effects using Thin Plate Splines
+
+The GAMLSS framework allows the parameters of the distribution to be modeled as functions of explanatory variables. In this example, the location parameter of the LGG distribution is modeled using a nonlinear smooth function estimated by a thin plate regression spline, together with a linear effect.
+
+A synthetic data set is generated according to
+
+\[
+\mu(x_1,x_2)=2+\sin(2\pi x_1)+1.5x_2,
+\]
+
+where the nonlinear component is estimated using a thin plate spline and the linear component is represented by \(x_2\). The scale and shape parameters are assumed to be constant.
+
+
+```{r thin-plate-simulation, message=FALSE}
+library(mgcv)
+library(gamlss.add)
+
+set.seed(123)
+
+n <- 300
+
+
+## Covariates
+
+x1 <- runif(n, 0, 1)
+
+x2 <- runif(n, -1, 1)
+
+
+## True location function
+
+f_true <- function(x1, x2){
+  2 + sin(2*pi*x1) + 1.5*x2
+}
+
+
+mu_true <- f_true(x1, x2)
+
+## Remaining LGG parameters
+
+sigma_true <- 0.7
+
+nu_true <- 0.5
+
+
+## Generate observations
+
+y <- rLGG(
+  n,
+  mu = mu_true,
+  sigma = sigma_true,
+  nu = nu_true
+)
+
+
+dados <- data.frame(
+  y,
+  x1,
+  x2
+)
+
+```
+
+
+### Thin Plate spline LGG model
+
+The LGG location parameter is modeled using a thin plate regression spline:
+
+\[
+\mu(x_1,x_2)=s(x_1)+\beta x_2.
+\]
+
+
+```{r thin-plate-fit}
+
+tps.fit <- gamlss(
+  y ~ ga(~s(x1, bs = "tp", m = 2) + x2),
+  sigma.formula = ~1,
+  nu.formula = ~1,
+  data = dados,
+  family = LGG(),
+  trace = FALSE
+)
+
+
+summary(tps.fit)
+
+```
+
+
+### Estimated nonlinear function
+
+To visualize the estimated nonlinear effect, the linear component is fixed at \(x_2=0\). The estimated LGG location parameter is compared with the true generating function.
+
+
+```{r thin-plate-function, fig.width=7, fig.height=5}
+
+
+newdata <- data.frame(
+  x1 = seq(0,1,length.out=200),
+  x2 = 0
+)
+
+
+mu_est <- predict(
+  tps.fit,
+  newdata = newdata,
+  what = "mu",
+  type = "response"
+)
+
+
+mu_true_plot <- f_true(
+  newdata$x1,
+  newdata$x2
+)
+
+
+
+plot(
+  newdata$x1,
+  mu_true_plot,
+  type="l",
+  lwd=3,
+  xlab="x1",
+  ylab=expression(mu),
+  main="Thin plate spline estimation"
+)
+
+
+lines(
+  newdata$x1,
+  mu_est,
+  col=2,
+  lwd=3
+)
+
+
+legend(
+  "topright",
+  legend=c(
+    "True function",
+    "Estimated function"
+  ),
+  col=c(1,2),
+  lwd=3,
+  bty="n"
+)
+
+```
+
+### Parameter estimates
+
+The estimated parameters are compared with the values used to generate the data.
+
+
+```{r thin-plate-parameters}
+
+sigma_hat <- fitted(
+  tps.fit,
+  "sigma"
+)[1]
+
+
+nu_hat <- fitted(
+  tps.fit,
+  "nu"
+)[1]
+
+
+parameters <- data.frame(
+  Parameter = c("sigma", "nu"),
+  True = c(sigma_true, nu_true),
+  Estimate = c(sigma_hat, nu_hat)
+)
+
+
+parameters
+
+```
+
+The estimated values are close to the generating parameters, showing that the LGG model combined with thin plate splines can recover both nonlinear effects and distributional parameters.
+
+
+---
+
+## Right-Censored data with Thin Plate Splines
+
+The previous model can be extended to right-censored survival data. The survival times are generated by exponentiating the LGG response, and the corresponding censored log-LGG family is fitted using the **gamlss.cens** package.
+
+
+```{r censored-thin-plate-simulation}
+
+
+library(survival)
+library(gamlss.cens)
+
+
+set.seed(123)
+
+
+## Generate survival times
+
+true_time <- exp(y)
+
+
+## Independent censoring
+
+censor_time <- runif(
+  n,
+  0,
+  10
+)
+
+
+status <- as.numeric(
+  true_time <= censor_time
+)
+
+
+time <- pmin(
+  true_time,
+  censor_time
+)
+
+
+dados_cens <- data.frame(
+  time,
+  status,
+  x1,
+  x2
+)
+
+
+cat(
+  "Censoring proportion:",
+  round(mean(status == 0),3),
+  "\n"
+)
+
+
+```
+
+### Censored log-LGG family
+
+
+```{r create-censored-family}
+
+
+gen.Family(
+  "LGG",
+  type="log"
+)
+
+
+gen.cens(
+  logLGG,
+  type="right"
+)
+
+```
+
+
+### Kaplan–Meier and estimated survival curve
+
+The parametric survival function obtained from the fitted censored log-LGG model is compared with the Kaplan–Meier estimator.
+
+```{r censored-survival-fit}
+
+fit_cens_logLGG <- gamlss(
+  Surv(time,status) ~ 1,
+  sigma.formula = ~1,
+  nu.formula = ~1,
+  family = logLGGrc(),
+  data = dados_cens,
+  trace = FALSE
+)
+
+
+## Estimated parameters
+
+mu_hat <- fitted(
+  fit_cens_logLGG,
+  "mu"
+)[1]
+
+sigma_hat <- fitted(
+  fit_cens_logLGG,
+  "sigma"
+)[1]
+
+nu_hat <- fitted(
+  fit_cens_logLGG,
+  "nu"
+)[1]
+
+
+parameters <- data.frame(
+  Parameter = c("sigma", "nu"),
+  True = c(sigma_true, nu_true),
+  Estimate = c(sigma_hat, nu_hat)
+)
+
+parameters
+
+```
+
+```{r censored-survival-plot, fig.width=7, fig.height=5}
+
+km <- survfit(
+  Surv(time,status) ~ 1
+)
+
+times <- km$time
+
+
+S_logLGG <- plogLGG(
+  times,
+  mu = mu_hat,
+  sigma = sigma_hat,
+  nu = nu_hat,
+  lower.tail = FALSE
+)
+
+
+plot(
+  km,
+  lwd = 2,
+  xlab = "Time",
+  ylab = "Survival probability",
+  main = "Kaplan–Meier and log-LGG Survival Curves"
+)
+
+
+lines(
+  times,
+  S_logLGG,
+  col = 2,
+  lwd = 2
+)
+
+
+legend(
+  "topright",
+  legend = c(
+    "Kaplan–Meier",
+    "log-LGG"
+  ),
+  col = c(1,2),
+  lwd = 2,
+  bty = "n"
+)
+
+```
+
+The results illustrate that the log-LGG distribution provides an adequate parametric representation for right-censored survival data, with the estimated survival curve closely following the Kaplan–Meier estimator.
+
+
+
+
+
+### Thin Plate censored model
+
+
+The censored model is fitted as
+
+
+\[
+\mu(x_1,x_2)=s(x_1)+\beta x_2.
+\]
+
+
+```{r censored-thin-plate-fit}
+
+fit_cens_tps <- gamlss(
+  Surv(time,status) ~ 
+    ga(~s(x1, bs="tp", m=2)+x2),
+  sigma.formula = ~1,
+  nu.formula = ~1,
+  family = logLGGrc(),
+  data = dados_cens,
+  trace = FALSE
+)
+
+
+summary(fit_cens_tps)
+
+```
+
+### Parameter Estimates for the Censored Model
+
+
+```{r censored-parameters}
+
+sigma_hat <- fitted(
+  fit_cens_tps,
+  "sigma"
+)[1]
+
+
+nu_hat <- fitted(
+  fit_cens_tps,
+  "nu"
+)[1]
+
+
+parameters_cens <- data.frame(
+  Parameter=c("sigma","nu"),
+  True=c(sigma_true,nu_true),
+  Estimate=c(sigma_hat,nu_hat)
+)
+
+
+parameters_cens
+
+
+```
+
+

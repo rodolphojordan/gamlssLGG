@@ -1,0 +1,26 @@
+Package: gamlss.LGG
+Type: Package
+Title: Log-Generalized Gamma Distribution for GAMLSS
+Version: 0.1.0
+Authors@R: c(
+  person(given = "Rodolpho Jórdan",
+         family = "Domingos Quintela",
+         role = c("aut", "cre"),
+         email = "rodolpho.jordan@usp.br"),
+  person(given = "Gilberto",
+         family = "Alvarenga Paula",
+         role = c("ctb", "ths")))
+Description: Implements the Log-Generalized Gamma (LGG) distribution for use with the GAMLSS framework. Provides density, distribution, quantile, random generation functions, analytical scores, and a GAMLSS family object.
+License: GPL-3
+Depends: R (>= 3.5.0)
+Imports: gamlss, gamlss.dist
+Encoding: UTF-8
+LazyData: true
+Config/roxygen2/version: 8.0.0
+RoxygenNote: 7.3.3
+Suggests: 
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+Config/testthat/edition: 3
