@@ -1,4 +1,4 @@
-Package: gamlss.LGG
+Package: gamlssLGG
 Type: Package
 Title: Log-Generalized Gamma Distribution for GAMLSS
 Version: 0.1.0
@@ -19,6 +19,10 @@ LazyData: true
 Config/roxygen2/version: 8.0.0
 RoxygenNote: 7.3.3
 Suggests: 
+    gamlss.add,
+    gamlss.cens,
+    mgcv,
+    survival,
     testthat (>= 3.0.0),
     knitr,
     rmarkdown

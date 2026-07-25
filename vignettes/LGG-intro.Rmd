@@ -9,7 +9,7 @@ vignette: >
 ---
 # Introduction
 
-The **gamlss.LGG** package implements the LGG distribution for the GAMLSS framework. It provides functions for evaluating the probability density function, cumulative distribution function, quantile function, random number generation, and the corresponding GAMLSS family object.
+The **gamlssLGG** package implements the LGG distribution for the GAMLSS framework. It provides functions for evaluating the probability density function, cumulative distribution function, quantile function, random number generation, and the corresponding GAMLSS family object.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
@@ -19,7 +19,7 @@ knitr::opts_chunk$set(
 )
 
 library(gamlss)
-library(gamlss.LGG)
+library(gamlssLGG)
 ```
 
 ## Probability density function
@@ -230,7 +230,7 @@ legend(
 )
 ```
 
-The fitted log-LGG survival curve follows the Kaplan–Meier estimator, showing the flexibility of the proposed distribution for modeling right-censored survival data. This example demonstrates how the **gamlss.LGG** package can be combined with **gamlss.cens** to perform parametric survival analysis.
+The fitted log-LGG survival curve follows the Kaplan–Meier estimator, showing the flexibility of the proposed distribution for modeling right-censored survival data. This example demonstrates how the **gamlssLGG** package can be combined with **gamlss.cens** to perform parametric survival analysis.
 
 ## Nonlinear effects using Thin Plate Splines
 

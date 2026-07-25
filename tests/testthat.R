@@ -7,6 +7,6 @@
 # * https://testthat.r-lib.org/articles/special-files.html
 
 library(testthat)
-library(gamlss.LGG)
+library(gamlssLGG)
 
-test_check("gamlss.LGG")
+test_check("gamlssLGG")
