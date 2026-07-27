@@ -1,6 +1,6 @@
 ---
 title: "Introduction to the LGG distribution"
-author: "Rodolpho Jordan"
+author: "Rodolpho Jordan D. Quintela"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Introduction to the LGG Distribution}
