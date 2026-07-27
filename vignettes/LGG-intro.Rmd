@@ -1,6 +1,6 @@
 ---
 title: "Introduction to the LGG distribution"
-author: "Rodolpho Jordan"
+author: "Rodolpho Jordan D. Quintela"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Introduction to the LGG Distribution}
@@ -309,7 +309,7 @@ The LGG location parameter is modeled using a thin plate regression spline:
 
 \[
 \mu(x_1,x_2)=
-\beta_0 + \beta_0x_1 + g(x_2)+.
+\beta_0 + \beta_0x_1 + g(x_2).
 \]
 
 
@@ -361,7 +361,7 @@ plot(
   mu_true_plot,
   type="l",
   lwd=3,
-  xlab="x1",
+  xlab="x2",
   ylab=expression(mu),
   main="Thin plate spline estimation"
 )
