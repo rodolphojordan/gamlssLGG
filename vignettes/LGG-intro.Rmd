@@ -1,5 +1,5 @@
 ---
-title: "Introduction to the LGG Distribution"
+title: "Introduction to the LGG distribution"
 author: "Rodolpho Jordan"
 output: rmarkdown::html_vignette
 vignette: >
@@ -22,38 +22,16 @@ knitr::opts_chunk$set(
   warning = FALSE
 )
 
-# Função para instalar pacotes faltantes
-install_if_missing <- function(pkgs) {
-  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
-  if (length(missing) > 0) {
-    message("Installing missing packages: ", paste(missing, collapse = ", "))
-    install.packages(missing, dependencies = TRUE)
-  }
-}
 
-# Lista de pacotes necessários
-required_pkgs <- c(
-  "gamlss",
-  "gamlss.add",
-  "gamlss.cens",
-  "mgcv",
-  "survival"
-)
-
-# Instalar pacotes faltantes automaticamente
-install_if_missing(required_pkgs)
 
 # Carregar todos os pacotes
 library(gamlss)
 library(gamlssLGG)
-<<<<<<< HEAD
 library(gamlss.cens)
 library(survival)
 
 # Mensagem de confirmação
 message("All packages loaded successfully!")
-=======
->>>>>>> f318427aa1d06b2364c8b21b69851653aa5b53e7
 ```
 
 ## Probability density function
