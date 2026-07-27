@@ -46,11 +46,14 @@ install_if_missing(required_pkgs)
 # Carregar todos os pacotes
 library(gamlss)
 library(gamlssLGG)
+<<<<<<< HEAD
 library(gamlss.cens)
 library(survival)
 
 # Mensagem de confirmação
 message("All packages loaded successfully!")
+=======
+>>>>>>> f318427aa1d06b2364c8b21b69851653aa5b53e7
 ```
 
 ## Probability density function
