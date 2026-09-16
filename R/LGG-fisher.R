@@ -1,234 +1,248 @@
 #' Penalized observed Fisher information for the LGG model
 #'
-#' Computes the observed Fisher information matrix and its penalized
-#' version for a fitted LGG GAMLSS model.
+#' Computes the observed Fisher information matrix for a fitted LGG
+#' GAMLSS model and its penalized version, including the contribution
+#' of the smoothing penalties.
 #'
-#' The current implementation assumes the links
-#' \code{identity} for \code{mu}, \code{log} for \code{sigma},
-#' and \code{identity} for \code{nu}.
+#' The observed Fisher information is obtained as the negative of the
+#' Hessian of the log-likelihood with respect to the complete vector of
+#' regression coefficients. The Hessian is computed observation by
+#' observation using numerical derivatives of the LGG log-density.
 #'
-#' Smooth terms are extracted from the GAMLSS object through
-#' \code{fit$mu.coefSmo[[k]]$smooth[[1]]$S}.
+#' For the model components, the implementation assumes the
+#' \code{identity} link for \code{mu}, the \code{log} link for
+#' \code{sigma}, and the \code{identity} link for \code{nu}.
+#' The derivative associated with the \code{log} link of \code{sigma}
+#' is explicitly accounted for in the Hessian.
+#'
+#' Smooth terms are extracted from the fitted \code{gamlss} object,
+#' and their penalty matrices and smoothing parameters are incorporated
+#' into the penalized information matrix. The penalized observed Fisher
+#' information is defined as
+#' \deqn{
+#' I_{\mathrm{obs,pen}} = I_{\mathrm{obs}} + P,
+#' }{
+#' I_obs_pen = I_obs + P,
+#' }
+#' where \code{P} is the block-diagonal penalty matrix associated with
+#' the smooth terms.
+#'
+#' The inverse of each information matrix is computed using a numerical
+#' singularity check. Regularization is applied only when the matrix is
+#' singular or numerically singular according to the tolerance specified
+#' by \code{tol}.
 #'
 #' @param fit A fitted \code{gamlss} model with family \code{LGG}.
-#' @param data Data frame used to fit the model.
-#' @param penalized Logical. If \code{TRUE}, returns the penalized
-#'   observed Fisher information.
+#' @param data Data frame used to fit the model. This argument is
+#'   retained for compatibility with the function interface.
+#' @param penalized Logical. If \code{TRUE}, the penalty matrices of
+#'   the smooth terms are incorporated into the penalized observed
+#'   Fisher information matrix. If \code{FALSE}, the penalty matrix
+#'   returned is a zero matrix.
+#' @param tol Numerical tolerance used to determine whether an
+#'   information matrix is singular or numerically singular. If
+#'   regularization is required, this tolerance also determines the
+#'   magnitude of the regularization parameter.
 #'
 #' @return A list containing:
 #' \describe{
 #'   \item{I_obs}{Unpenalized observed Fisher information matrix.}
-#'   \item{P}{Penalty matrix.}
-#'   \item{I_obs_pen}{Penalized observed Fisher information matrix.}
-#'   \item{S}{List of penalty matrices for the smooth terms.}
-#'   \item{lambda}{Smoothing parameters.}
-#'   \item{X_mu}{Complete design matrix for the mu predictor.}
-#'   \item{H_beta}{List of observation-specific Hessian contributions.}
+#'   \item{P}{Penalty matrix associated with the smooth terms.}
+#'   \item{I_obs_pen}{Penalized observed Fisher information matrix,
+#'   obtained as \code{I_obs + P}.}
+#'   \item{I_obs_inv}{Inverse of the observed Fisher information
+#'   matrix.}
+#'   \item{I_obs_pen_inv}{Inverse of the penalized observed Fisher
+#'   information matrix.}
+#'   \item{regularized_obs}{Logical indicating whether regularization
+#'   was required to obtain the inverse of \code{I_obs}.}
+#'   \item{regularized_pen}{Logical indicating whether regularization
+#'   was required to obtain the inverse of \code{I_obs_pen}.}
+#'   \item{lambda_reg_obs}{Regularization parameter used for
+#'   \code{I_obs}. Equal to zero when no regularization was required.}
+#'   \item{lambda_reg_pen}{Regularization parameter used for
+#'   \code{I_obs_pen}. Equal to zero when no regularization was required.}
+#'   \item{eigenvalues_obs}{Eigenvalues of the observed Fisher
+#'   information matrix before regularization.}
+#'   \item{eigenvalues_pen}{Eigenvalues of the penalized observed
+#'   Fisher information matrix before regularization.}
+#'   \item{X_mu}{Complete design matrix for the \code{mu} predictor,
+#'   including parametric and smooth terms.}
+#'   \item{X_mu_param}{Design matrix containing only the parametric
+#'   terms of the \code{mu} predictor.}
+#'   \item{X_mu_smooth}{Design matrix containing the coefficients
+#'   associated with the smooth terms of the \code{mu} predictor.
+#'   \code{NULL} if no smooth terms are present.}
+#'   \item{X_sigma}{Design matrix for the \code{sigma} predictor.}
+#'   \item{X_nu}{Design matrix for the \code{nu} predictor.}
+#'   \item{smooth_info}{List containing information for each smooth
+#'   term, including its design matrix, penalty matrix, smoothing
+#'   parameter, and number of coefficients.}
+#'   \item{H_beta}{List of observation-specific Hessian contributions
+#'   with respect to the complete vector of regression coefficients.}
+#'   \item{parameter_names}{Names of the parameters corresponding to
+#'   the rows and columns of the information and inverse information
+#'   matrices.}
 #' }
 #'
-#' @importFrom stats fitted
+#' @importFrom stats fitted model.frame model.response optimHess
 #' @importFrom mgcv PredictMat
 #'
 #' @export
-
-observed_fisher_pen_LGG <- function(fit, data, penalized = TRUE) {
+observed_fisher_pen_LGG <- function(fit, data,
+                                    penalized = TRUE,
+                                    tol = 1e-8) {
 
   # ============================================================
-  # 1. Verificacoes
+  # 1. Verificações
   # ============================================================
 
   if (!inherits(fit, "gamlss")) {
-    stop("'fit' deve ser um objeto ajustado pela funcao gamlss().")
+    stop("fit deve ser um objeto da classe 'gamlss'.")
   }
 
-  if (missing(data)) {
-    stop("'data' deve ser fornecido.")
+  fam <- fit$family[1]
+
+  if (fam != "LGG") {
+    stop("A função foi desenvolvida para a família LGG.")
   }
 
-  # ============================================================
-  # 2. Verificar os links
-  # ============================================================
-
-  if (fit$mu.link != "identity") {
-    stop("A funcao assume link identity para mu.")
-  }
-
-  if (fit$sigma.link != "log") {
-    stop("A funcao assume link log para sigma.")
-  }
-
-  if (fit$nu.link != "identity") {
-    stop("A funcao assume link identity para nu.")
-  }
 
   # ============================================================
-  # 3. Valores ajustados
+  # 2. Valores ajustados
   # ============================================================
 
-  mu_hat <- fitted(fit, what = "mu")
-  sigma_hat <- fitted(fit, what = "sigma")
-  nu_hat <- fitted(fit, what = "nu")
+  y <- model.response(model.frame(fit))
 
-  n <- length(mu_hat)
+  mu <- fitted(fit, what = "mu")
+  sigma <- fitted(fit, what = "sigma")
+  nu <- fitted(fit, what = "nu")
+
+  n <- length(y)
+
 
   # ============================================================
-  # 4. Matriz de projeto da parte parametrica
+  # 3. Estrutura dos suavizadores
+  # ============================================================
+
+  terSmo <- getSmo(fit)
+
+  d <- length(terSmo$sp)
+
+
+  # ============================================================
+  # 4. Matriz paramétrica de mu
+  # ============================================================
+
+  X_mu_full <- fit$mu.x
+
+  # Mantém somente as colunas paramétricas.
   #
+  # No objeto GAMLSS, termos do tipo ga(~s(...))
+  # aparecem como colunas auxiliares e podem conter NA
+  # nos coeficientes.
+  #
+  beta_mu_all <- coef(fit, "mu")
+
+  ind_param_mu <- !is.na(beta_mu_all)
+
+  X_mu_param <- X_mu_full[, ind_param_mu, drop = FALSE]
+
+  beta_mu_param <- beta_mu_all[ind_param_mu]
+
+
+  # ============================================================
+  # 5. Matrizes dos suavizadores
   # ============================================================
 
-  X_all <- as.matrix(fit$mu.x)[,1:(length(fit$mu.coefficients)
-                                       -length(fit$mu.coefSm))]
+  X_mu_smooth <- NULL
 
-  beta_mu <- coef(fit, what = "mu")
+  smooth_info <- vector("list", d)
 
-  beta_names <- names(beta_mu)
+  if (d > 0) {
 
-  # ============================================================
-  # 5. Identificar os coeficientes dos termos suaves
-  # ============================================================
+    for (j in seq_len(d)) {
 
-  smooth_coef_names <- character(0)
+      sm <- terSmo$smooth[[j]]
 
-  if (!is.null(fit$mu.coefSmo) &&
-      length(fit$mu.coefSmo) > 0) {
+      # Matriz de desenho da spline
+      X_smooth_j <- model.matrix(terSmo)[,
+                                         sm$first.para:sm$last.para,
+                                         drop = FALSE]
 
-    for (k in seq_along(fit$mu.coefSmo)) {
+      # Número de coeficientes
+      q_j <- ncol(X_smooth_j)
 
-      sm <- fit$mu.coefSmo[[k]]
-      smo <- sm$smooth[[1]]
-
-      X_k <- mgcv::PredictMat(
-        smo,
-        data
+      X_mu_smooth <- cbind(
+        X_mu_smooth,
+        X_smooth_j
       )
 
-      K_k <- ncol(X_k)
+      # Penalização
+      S_j <- sm$S
 
-      label_k <- smo$label
+      # Parâmetro de suavização
+      lambda_j <- terSmo$sp[j]
 
-      if (is.null(label_k) || is.na(label_k)) {
-        label_k <- paste0("s", k)
-      }
-
-      smooth_coef_names <- c(
-        smooth_coef_names,
-        paste0(label_k, seq_len(K_k))
+      smooth_info[[j]] <- list(
+        X = X_smooth_j,
+        S = S_j,
+        lambda = lambda_j,
+        q = q_j
       )
     }
   }
 
+
   # ============================================================
-  # 6. Identificar somente os coeficientes parametricos
+  # 6. Matriz completa do preditor de mu
   # ============================================================
 
-  param_names <- beta_names[
-    !beta_names %in% smooth_coef_names
-  ]
+  if (!is.null(X_mu_smooth)) {
 
-  # Remover possiveis colunas auxiliares ga(~s(...))
-  param_names <- param_names[
-    param_names %in% colnames(X_all)
-  ]
-
-  if (length(param_names) == 0) {
-    stop(
-      "Nao foi possivel identificar os termos parametricos ",
-      "da formula de mu."
+    X_mu <- cbind(
+      X_mu_param,
+      X_mu_smooth
     )
+
+  } else {
+
+    X_mu <- X_mu_param
   }
 
-  X_param <- X_all[
-    ,
-    param_names,
-    drop = FALSE
-  ]
 
   # ============================================================
-  # 7. Construir a matriz completa X_mu
+  # 7. Matrizes de sigma e nu
   # ============================================================
 
-  X_mu <- X_param
+  X_sigma <- fit$sigma.x
+  X_nu <- fit$nu.x
 
-  smooth_info <- list()
-
-  if (!is.null(fit$mu.coefSmo) &&
-      length(fit$mu.coefSmo) > 0) {
-
-    for (k in seq_along(fit$mu.coefSmo)) {
-
-      sm <- fit$mu.coefSmo[[k]]
-      smo <- sm$smooth[[1]]
-
-      # Matriz de projeto do termo suave
-      X_k <- mgcv::PredictMat(
-        smo,
-        data
-      )
-
-      # ========================================================
-      # MATRIZES DE PENALIZACAO
-      #
-      # Estrutura utilizada:
-      #
-      # fit$mu.coefSmo[[k]]$smooth[[1]]$S
-      # ========================================================
-
-      S_k <- smo$S
-
-      # Parametros de suavizacao
-      lambda_k <- sm$sp
-
-      # Verificacao
-      if (length(S_k) != length(lambda_k)) {
-
-        if (length(S_k) == 1 &&
-            length(lambda_k) >= 1) {
-
-          lambda_k <- lambda_k[1]
-
-        } else {
-
-          stop(
-            "O numero de matrizes de penalizacao e ",
-            "parametros de suavizacao nao coincide ",
-            "para o termo suave ", k, "."
-          )
-        }
-      }
-
-      # Adicionar matriz do termo suave
-      X_mu <- cbind(
-        X_mu,
-        X_k
-      )
-
-      # Guardar informacoes
-      smooth_info[[k]] <- list(
-        X = X_k,
-        S = S_k,
-        lambda = lambda_k,
-        label = smo$label
-      )
-    }
-  }
 
   # ============================================================
-  # 8. Dimensao do vetor de parametros
+  # 8. Número total de parâmetros
   # ============================================================
 
   p_mu <- ncol(X_mu)
+  p_sigma <- ncol(X_sigma)
+  p_nu <- ncol(X_nu)
 
-  # Um intercepto para sigma e um para nu
-  p <- p_mu + 2
+  p <- p_mu + p_sigma + p_nu
+
+
+  # ============================================================
+  # 9. Índices dos parâmetros
+  # ============================================================
 
   ind_mu <- seq_len(p_mu)
 
-  ind_sigma <- p_mu + 1
+  ind_sigma <- p_mu + seq_len(p_sigma)
 
-  ind_nu <- p_mu + 2
+  ind_nu <- p_mu + p_sigma + seq_len(p_nu)
+
 
   # ============================================================
-  # 9. Inicializar a informacao de Fisher observada
+  # 10. Informação observada
   # ============================================================
 
   I_obs <- matrix(
@@ -237,110 +251,59 @@ observed_fisher_pen_LGG <- function(fit, data, penalized = TRUE) {
     ncol = p
   )
 
-  # ============================================================
-  # 10. Guardar as Hessianas individuais
-  # ============================================================
-
-  H_beta <- vector(
-    "list",
-    n
-  )
 
   # ============================================================
-  # 11. Calculo da informacao observada
+  # 11. Hessiana individual
+  #
+  # Aqui usamos derivadas numéricas da log-verossimilhança
+  # individual para obter também os termos cruzados.
   # ============================================================
+
+  loglik_i <- function(theta, yi) {
+
+    dLGG(
+      y = yi,
+      mu = theta[1],
+      sigma = theta[2],
+      nu = theta[3],
+      log = TRUE
+    )
+  }
+
+
+  # ============================================================
+  # 12. Loop sobre as observações
+  # ============================================================
+
+  H_beta_list <- vector("list", n)
 
   for (i in seq_len(n)) {
 
-    y_i <- fit$y[i]
-
-    mu_i <- mu_hat[i]
-
-    sigma_i <- sigma_hat[i]
-
-    nu_i <- nu_hat[i]
-
-    # ----------------------------------------------------------
-    # Hessiana em relacao a (mu, sigma, nu)
-    # ----------------------------------------------------------
-
-    H_theta <- matrix(
-      c(
-        d2ldm2(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        ),
-
-        d2ldmdd(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        ),
-
-        d2ldmdv(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        ),
-
-        d2ldmdd(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        ),
-
-        d2ldd2(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        ),
-
-        d2ldddv(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        ),
-
-        d2ldmdv(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        ),
-
-        d2ldddv(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        ),
-
-        d2ldv2(
-          y_i,
-          mu_i,
-          sigma_i,
-          nu_i
-        )
-      ),
-      nrow = 3,
-      ncol = 3,
-      byrow = TRUE
+    theta_i <- c(
+      mu[i],
+      sigma[i],
+      nu[i]
     )
 
+
     # ----------------------------------------------------------
-    # Matriz de derivadas dos parametros em relacao aos
-    # preditores lineares
+    # Hessiana da log-verossimilhança em relação a
+    # (mu, sigma, nu)
+    # ----------------------------------------------------------
+
+    H_theta <- optimHess(
+      par = theta_i,
+      fn = loglik_i,
+      yi = y[i]
+    )
+
+
+    # ----------------------------------------------------------
+    # Matriz Jacobiana da transformação
     #
-    # mu    = eta_mu
-    # sigma = exp(eta_sigma)
-    # nu    = eta_nu
+    # theta = (mu, sigma, nu)
+    #
+    # em relação ao vetor completo de coeficientes
     # ----------------------------------------------------------
 
     A_i <- matrix(
@@ -349,41 +312,43 @@ observed_fisher_pen_LGG <- function(fit, data, penalized = TRUE) {
       ncol = p
     )
 
+
     # mu
-    A_i[
-      1,
-      ind_mu
-    ] <- X_mu[i, ]
+    A_i[1, ind_mu] <- X_mu[i, ]
+
 
     # sigma
-    A_i[
-      2,
-      ind_sigma
-    ] <- sigma_i
+    #
+    # sigma = exp(eta_sigma)
+    #
+    # d sigma / d beta_sigma = sigma * X_sigma
+    A_i[2, ind_sigma] <- sigma[i] * X_sigma[i, ]
+
 
     # nu
-    A_i[
-      3,
-      ind_nu
-    ] <- 1
+    A_i[3, ind_nu] <- X_nu[i, ]
+
 
     # ----------------------------------------------------------
-    # Hessiana em relacao aos coeficientes
+    # Termo da regra da cadeia
     # ----------------------------------------------------------
 
-    H_beta_i <- t(A_i) %*%
-      H_theta %*%
-      A_i
+    H_beta_i <- t(A_i) %*% H_theta %*% A_i
+
 
     # ----------------------------------------------------------
-    # Termo adicional devido ao link log de sigma
+    # Correção da segunda derivada do link de sigma
+    #
+    # sigma = exp(eta_sigma)
+    #
+    # d2 sigma / d eta_sigma^2 = sigma
     # ----------------------------------------------------------
 
-    s_sigma <- score_sigma(
-      y_i,
-      mu_i,
-      sigma_i,
-      nu_i
+    score_sigma_i <- score_sigma(
+      y = y[i],
+      mu = mu[i],
+      sigma = sigma[i],
+      nu = nu[i]
     )
 
     H_beta_i[
@@ -394,25 +359,26 @@ observed_fisher_pen_LGG <- function(fit, data, penalized = TRUE) {
         ind_sigma,
         ind_sigma
       ] +
-      s_sigma * sigma_i
+      score_sigma_i *
+      sigma[i] *
+      tcrossprod(
+        X_sigma[i, ],
+        X_sigma[i, ]
+      )
+
 
     # ----------------------------------------------------------
-    # Armazenar Hessiana individual
-    # ----------------------------------------------------------
-
-    H_beta[[i]] <- H_beta_i
-
-    # ----------------------------------------------------------
-    # Informacao observada:
-    #
-    # I_obs = - sum(H_i)
+    # Informação observada = - Hessiana
     # ----------------------------------------------------------
 
     I_obs <- I_obs - H_beta_i
+
+    H_beta_list[[i]] <- H_beta_i
   }
 
+
   # ============================================================
-  # 12. Construir a matriz de penalizacao P
+  # 13. Matriz de penalização
   # ============================================================
 
   P <- matrix(
@@ -421,192 +387,228 @@ observed_fisher_pen_LGG <- function(fit, data, penalized = TRUE) {
     ncol = p
   )
 
-  S_list <- list()
+  if (penalized && d > 0) {
 
-  lambda_list <- list()
+    pos_smooth <- length(beta_mu_param) + 1
 
-  # Primeiro coeficiente dos termos suaves
-  start_smooth <- ncol(X_param) + 1
+    for (j in seq_len(d)) {
 
-  # ============================================================
-  # 13. Inserir as penalizacoes dos termos suaves
-  # ============================================================
+      q_j <- smooth_info[[j]]$q
 
-  if (length(smooth_info) > 0) {
+      lambda_j <- smooth_info[[j]]$lambda
 
-    for (k in seq_along(smooth_info)) {
+      S_j <- smooth_info[[j]]$S
 
-      info_k <- smooth_info[[k]]
+      # Pode existir mais de uma matriz de penalização
+      # para um mesmo suavizador.
+      if (is.list(S_j)) {
 
-      X_k <- info_k$X
+        P_j <- matrix(
+          0,
+          nrow = q_j,
+          ncol = q_j
+        )
 
-      S_k <- info_k$S
+        for (k in seq_along(S_j)) {
 
-      lambda_k <- info_k$lambda
-
-      K_k <- ncol(X_k)
-
-      # Indices dos coeficientes do termo suave
-      ind_k <- start_smooth:
-        (start_smooth + K_k - 1)
-
-      # --------------------------------------------------------
-      # Caso com uma matriz de penalizacao
-      # --------------------------------------------------------
-
-      if (length(S_k) == 1) {
-
-        P[
-          ind_k,
-          ind_k
-        ] <-
-          P[
-            ind_k,
-            ind_k
-          ] +
-          lambda_k[1] * S_k[[1]]
+          P_j <- P_j +
+            lambda_j[k] * S_j[[k]]
+        }
 
       } else {
 
-        # ------------------------------------------------------
-        # Caso com mais de uma matriz de penalizacao
-        # ------------------------------------------------------
-
-        if (length(lambda_k) != length(S_k)) {
-
-          stop(
-            "Para o termo suave ", k,
-            ", o numero de parametros de suavizacao ",
-            "nao coincide com o numero de matrizes S."
-          )
-        }
-
-        P_k <- matrix(
-          0,
-          nrow = K_k,
-          ncol = K_k
-        )
-
-        for (j in seq_along(S_k)) {
-
-          P_k <- P_k +
-            lambda_k[j] * S_k[[j]]
-        }
-
-        P[
-          ind_k,
-          ind_k
-        ] <-
-          P[
-            ind_k,
-            ind_k
-          ] +
-          P_k
+        P_j <- lambda_j * S_j
       }
 
-      # Guardar
-      S_list[[k]] <- S_k
 
-      lambda_list[[k]] <- lambda_k
+      ind_j <- pos_smooth:(pos_smooth + q_j - 1)
 
-      # Proximo termo suave
-      start_smooth <-
-        start_smooth + K_k
+      P[
+        ind_j,
+        ind_j
+      ] <- P[
+        ind_j,
+        ind_j
+      ] + P_j
+
+      pos_smooth <- pos_smooth + q_j
     }
   }
 
-  # ============================================================
-  # 14. Informacao de Fisher observada penalizada
-  # ============================================================
-
-  if (penalized) {
-
-    I_obs_pen <-
-      I_obs + P
-
-  } else {
-
-    I_obs_pen <-
-      I_obs
-  }
 
   # ============================================================
-  # 15. Nomes dos coeficientes
+  # 14. Informação observada penalizada
   # ============================================================
 
-  smooth_names <- character(0)
+  I_obs_pen <- I_obs + P
 
-  if (length(smooth_info) > 0) {
-
-    for (k in seq_along(smooth_info)) {
-
-      K_k <- ncol(
-        smooth_info[[k]]$X
-      )
-
-      label_k <-
-        smooth_info[[k]]$label
-
-      if (is.null(label_k) ||
-          is.na(label_k)) {
-
-        label_k <- paste0(
-          "s",
-          k
-        )
-      }
-
-      smooth_names <- c(
-        smooth_names,
-        paste0(
-          label_k,
-          seq_len(K_k)
-        )
-      )
-    }
-  }
-
-  coef_names <- c(
-    colnames(X_param),
-    smooth_names,
-    "sigma.(Intercept)",
-    "nu.(Intercept)"
-  )
 
   # ============================================================
-  # 16. Atribuir nomes
+  # 15. Função para obter inversa de forma segura
+  #
+  # Regularização somente se a matriz for singular ou
+  # numericamente singular.
   # ============================================================
 
-  dimnames(I_obs) <- list(
-    coef_names,
-    coef_names
-  )
+  safe_inverse <- function(M, tol = 1e-8) {
 
-  dimnames(P) <- list(
-    coef_names,
-    coef_names
-  )
+    M <- (M + t(M)) / 2
 
-  dimnames(I_obs_pen) <- list(
-    coef_names,
-    coef_names
-  )
+    ev <- eigen(
+      M,
+      symmetric = TRUE,
+      only.values = TRUE
+    )$values
 
-  # ============================================================
-  # 17. Retorno
-  # ============================================================
+    scale_M <- max(abs(ev))
 
-  return(
-    list(
-      I_obs = I_obs,
-      P = P,
-      I_obs_pen = I_obs_pen,
-      S = S_list,
-      lambda = lambda_list,
-      X_mu = X_mu,
-      X_param = X_param,
-      H_beta = H_beta,
-      smooth_info = smooth_info
+    singular <- (
+      any(!is.finite(ev)) ||
+        scale_M == 0 ||
+        min(abs(ev)) <= tol * scale_M
     )
+
+    if (!singular) {
+
+      return(list(
+        inverse = solve(M),
+        regularized = FALSE,
+        lambda_reg = 0,
+        eigenvalues = ev
+      ))
+    }
+
+
+    # ----------------------------------------------------------
+    # Regularização somente quando necessária
+    # ----------------------------------------------------------
+
+    lambda_reg <-
+      max(tol * scale_M - min(ev), 0)
+
+    lambda_reg <-
+      max(lambda_reg, tol * scale_M)
+
+    M_reg <-
+      M + lambda_reg * diag(nrow(M))
+
+    list(
+      inverse = solve(M_reg),
+      regularized = TRUE,
+      lambda_reg = lambda_reg,
+      eigenvalues = ev,
+      matrix_regularized = M_reg
+    )
+  }
+
+
+  # ============================================================
+  # 16. Inversas
+  # ============================================================
+
+  inv_obs <- safe_inverse(
+    I_obs,
+    tol = tol
   )
+
+  inv_obs_pen <- safe_inverse(
+    I_obs_pen,
+    tol = tol
+  )
+
+
+  # ============================================================
+  # 17. Nomes dos parâmetros
+  # ============================================================
+
+  names_mu_param <- names(beta_mu_param)
+
+  names_smooth <- character(0)
+
+  if (d > 0) {
+
+    for (j in seq_len(d)) {
+
+      names_smooth <- c(
+        names_smooth,
+        colnames(smooth_info[[j]]$X)
+      )
+    }
+  }
+
+  names_sigma <- names(coef(fit, "sigma"))
+  names_nu <- names(coef(fit, "nu"))
+
+  parameter_names <- c(
+    names_mu_param,
+    names_smooth,
+    paste0("sigma.", names_sigma),
+    paste0("nu.", names_nu)
+  )
+
+  rownames(I_obs) <- parameter_names
+  colnames(I_obs) <- parameter_names
+
+  rownames(P) <- parameter_names
+  colnames(P) <- parameter_names
+
+  rownames(I_obs_pen) <- parameter_names
+  colnames(I_obs_pen) <- parameter_names
+
+  rownames(inv_obs$inverse) <- parameter_names
+  colnames(inv_obs$inverse) <- parameter_names
+
+  rownames(inv_obs_pen$inverse) <- parameter_names
+  colnames(inv_obs_pen$inverse) <- parameter_names
+
+
+  # ============================================================
+  # 18. Retorno
+  # ============================================================
+
+  return(list(
+
+    # Informação observada
+    I_obs = I_obs,
+
+    # Penalização
+    P = P,
+
+    # Informação observada penalizada
+    I_obs_pen = I_obs_pen,
+
+    # Inversa da informação observada
+    I_obs_inv = inv_obs$inverse,
+
+    # Inversa da informação penalizada
+    I_obs_pen_inv = inv_obs_pen$inverse,
+
+    # Informação sobre regularização
+    regularized_obs = inv_obs$regularized,
+    regularized_pen = inv_obs_pen$regularized,
+
+    lambda_reg_obs = inv_obs$lambda_reg,
+    lambda_reg_pen = inv_obs_pen$lambda_reg,
+
+    eigenvalues_obs = inv_obs$eigenvalues,
+    eigenvalues_pen = inv_obs_pen$eigenvalues,
+
+    # Matrizes de desenho
+    X_mu = X_mu,
+    X_mu_param = X_mu_param,
+    X_mu_smooth = X_mu_smooth,
+    X_sigma = X_sigma,
+    X_nu = X_nu,
+
+    # Informação dos suavizadores
+    smooth_info = smooth_info,
+
+    # Hessianas individuais
+    H_beta = H_beta_list,
+
+    # Nomes
+    parameter_names = parameter_names
+  ))
 }
+
+

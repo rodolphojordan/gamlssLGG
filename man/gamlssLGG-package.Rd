@@ -11,6 +11,11 @@ Implements the Log-Generalized Gamma (LGG) distribution for use with the GAMLSS 
 \author{
 \strong{Maintainer}: Rodolpho Jórdan Domingos Quintela \email{rodolpho.jordan@usp.br}
 
+Authors:
+\itemize{
+  \item Rodolpho Jórdan Domingos Quintela \email{rodolpho.jordan@usp.br}
+}
+
 Other contributors:
 \itemize{
   \item Gilberto Alvarenga Paula [contributor, thesis advisor]
