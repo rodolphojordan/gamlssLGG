@@ -1,41 +1,5 @@
-#' Delta matrix for case-weight perturbation in the LGG model
-#'
-#' Computes the Delta matrix associated with case-weight perturbation
-#' for a fitted LGG GAMLSS model.
-#'
-#' The matrix is constructed from the derivatives of the individual
-#' log-likelihood contributions with respect to the complete vector of
-#' regression coefficients. It is partitioned into the parametric
-#' coefficients of mu, the coefficients of all smooth terms in mu,
-#' and the parameters of sigma and nu.
-#'
-#' The current implementation assumes the links
-#' \code{identity} for \code{mu}, \code{log} for \code{sigma},
-#' and \code{identity} for \code{nu}.
-#'
-#' For case-weight perturbation, the resulting matrix has the form
-#'
-#' \deqn{
-#' \Delta =
-#' [\Delta_\beta,\Delta_\gamma,\Delta_\sigma,\Delta_\nu],
-#' }
-#'
-#' where \code{beta} denotes the parametric coefficients of the
-#' \code{mu} predictor and \code{gamma} denotes the coefficients of
-#' all smooth terms in the \code{mu} predictor.
-#'
-#' @param fit A fitted \code{gamlss} model with family \code{LGG}.
-#'
-#' @return A matrix containing the Delta matrix for case-weight
-#'   perturbation. The columns are ordered as follows:
-#'   \code{mu} parametric coefficients, smooth-term coefficients,
-#'   \code{sigma} coefficients, and \code{nu} coefficients.
-#'
-#' @importFrom stats fitted
-#'
-#' @export
 
-Delta_case_LGG <- function(fit) {
+.delta_caseLGG <- function(fit) {
 
   # ============================================================
   # 1. Verificações
@@ -252,11 +216,11 @@ Delta_case_LGG <- function(fit) {
   # 14. Matriz Delta completa
   # ============================================================
 
-  Delta <- cbind(
-    Delta_beta,
-    Delta_gamma,
-    Delta_sigma,
-    Delta_nu
+  Delta <- rbind(
+    t(Delta_beta),
+    t(Delta_gamma),
+    t(Delta_sigma),
+    t(Delta_nu)
   )
 
 
@@ -282,7 +246,7 @@ Delta_case_LGG <- function(fit) {
     names(coef(fit, "nu"))
   )
 
-  colnames(Delta) <- c(
+  rownames(Delta) <- c(
     names_beta,
     names_gamma,
     names_sigma,
