@@ -18,8 +18,7 @@
 #' smooth term has one penalty matrix and one smoothing
 #' parameter.
 #'
-#' @importFrom Matrix
-#' @importFrom gamlss.add
+#' @importFrom Matrix bdiag
 #' @export
 
 LGGhat <- function(object) {
