@@ -1,7 +1,7 @@
 Package: gamlssLGG
 Type: Package
 Title: Log-Generalized Gamma Distribution for GAMLSS
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: c(
   person(given = "Rodolpho Jórdan",
          family = "Domingos Quintela",
