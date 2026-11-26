@@ -1,6 +1,9 @@
 envelope <- function(modelo) {
 
   dados <- na.omit(eval(modelo$call$data, envir = .GlobalEnv))
+
+  assign("dados", dados, envir = .GlobalEnv)
+
   nsim <- 100
   n <- dim(dados)[1]
 
